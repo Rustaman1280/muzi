@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
+import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/providers/app_providers.dart';
 import '../../core/models/song.dart';
@@ -30,10 +32,16 @@ class _HomeContentState extends State<_HomeContent> {
   List<Track> _all = [];
   List<Playlist> _playlists = [];
   final _albumPlaceholders = const [
-    'assets/images/foto (1).jpg','assets/images/foto (2).jpg','assets/images/foto (3).jpg','assets/images/foto (4).jpg',
-    'assets/images/foto (5).jpg','assets/images/foto (6).jpg','assets/images/foto (7).jpg','assets/images/foto (8).jpg',
-    'assets/images/foto (9).jpg','assets/images/foto (10).jpg','assets/images/foto (11).jpg','assets/images/foto (12).jpg',
-    'assets/images/foto (13).jpg','assets/images/foto (14).jpg','assets/images/foto (15).jpg','assets/images/foto (16).jpg','assets/images/foto (17).jpg',
+  'assets/images/foto (1).jpg','assets/images/foto (2).jpg','assets/images/foto (3).jpg','assets/images/foto (4).jpg',
+  'assets/images/foto (5).jpg','assets/images/foto (6).jpg','assets/images/foto (7).jpg','assets/images/foto (8).jpg',
+  'assets/images/foto (9).jpg','assets/images/foto (10).jpg','assets/images/foto (11).jpg','assets/images/foto (12).jpg',
+  'assets/images/foto (13).jpg','assets/images/foto (14).jpg','assets/images/foto (15).jpg','assets/images/foto (16).jpg','assets/images/foto (17).jpg',
+  'assets/images/foto (18).jpg','assets/images/foto (19).jpg','assets/images/foto (20).jpg','assets/images/foto (21).jpg','assets/images/foto (22).jpg',
+  'assets/images/foto (23).jpg','assets/images/foto (24).jpg','assets/images/foto (25).jpg','assets/images/foto (26).jpg','assets/images/foto (27).jpg',
+  'assets/images/foto (28).jpg','assets/images/foto (29).jpg','assets/images/foto (30).jpg','assets/images/foto (31).jpg','assets/images/foto (32).jpg',
+  'assets/images/foto (33).jpg','assets/images/foto (34).jpg','assets/images/foto (35).jpg','assets/images/foto (36).jpg','assets/images/foto (37).jpg',
+  'assets/images/foto (38).jpg','assets/images/foto (39).jpg','assets/images/foto (40).jpg','assets/images/foto (41).jpg','assets/images/foto (42).jpg',
+  'assets/images/foto (43).jpg','assets/images/foto (44).jpg',
   ];
   final _artistPlaceholder = 'assets/images/foto (1).jpg';
   bool _loading = true;
@@ -41,12 +49,14 @@ class _HomeContentState extends State<_HomeContent> {
   String _filter = '';
   bool _ascending = true;
   late final PlaylistRepository _playlistRepo;
+  late final int _sessionSalt; // randomizes placeholder selection per app session
 
   @override
   void initState() {
     super.initState();
     _playlistRepo = PlaylistRepository();
-    _load();
+  _sessionSalt = Random().nextInt(1<<30);
+  _load();
   }
 
   Future<void> _load() async {
@@ -100,7 +110,20 @@ class _HomeContentState extends State<_HomeContent> {
       duration: Duration(milliseconds: t.durationMs),
       albumArt: t.artworkPath,
     )).toList();
-    widget.audio.loadAndPlay(songs, startIndex: index);
+    final firstStart = widget.audio.state.current == null; // audio controller accessed via state
+    widget.audio.loadAndPlay(songs, startIndex: index).then((_) {
+      if((firstStart || mounted) && mounted){
+        final current = songs[index];
+        context.push('/player', extra: {
+          'title': current.title,
+          'artist': current.artist,
+          'artwork': AssetImage(_pickAlbumImage(current.album, seed: current.id.hashCode)),
+          'duration': current.duration,
+          'position': Duration.zero,
+          'playing': true,
+        });
+      }
+    });
   }
 
   void _showTrackMenu(Track t){
@@ -204,14 +227,6 @@ class _HomeContentState extends State<_HomeContent> {
           SliverToBoxAdapter(child: _buildRecommendations()),
           SliverToBoxAdapter(child: _SectionHeader('Trending This Weeks', action: _seeAllButton(_recent, title: 'Trending'))),
           SliverToBoxAdapter(child: _buildTrending()),
-          SliverToBoxAdapter(child: _SectionHeader('Playlists', action: IconButton(onPressed: () async {
-            final name = await _promptText('Nama Playlist');
-            if(name!=null && name.trim().isNotEmpty){
-              await _playlistRepo.createPlaylist(name.trim());
-              setState(()=> _playlists = _playlistRepo.getAllPlaylists());
-            }
-          }, icon: const Icon(Icons.add)) )),
-          SliverToBoxAdapter(child: _buildPlaylistsStrip()),
           SliverToBoxAdapter(child: _SectionHeader('All Songs', action: IconButton(onPressed: _scrollToTop, icon: const Icon(Icons.arrow_upward, size: 18)) )),
           SliverList.builder(
             itemCount: _filteredSorted.length,
@@ -256,7 +271,7 @@ class _HomeContentState extends State<_HomeContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-  Text('Hi, User', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white, shadows: const [Shadow(blurRadius: 6, color: Colors.black54, offset: Offset(0,2))])),
+  Text('Hi, wibu', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white, shadows: const [Shadow(blurRadius: 6, color: Colors.black54, offset: Offset(0,2))])),
         const SizedBox(height: 4),
   Text('Selamat $greet – ayo dengarkan musik hari ini 🔥', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70)),
       ],
@@ -349,57 +364,7 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  Widget _buildPlaylistsStrip(){
-    if(_playlists.isEmpty){
-      return const SizedBox(height: 0);
-    }
-    return SizedBox(
-      height: 140,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: _playlists.length,
-        separatorBuilder: (_, __)=> const SizedBox(width: 14),
-        itemBuilder: (c,i){
-          final p = _playlists[i];
-          final tracks = _playlistRepo.getTracksOf(p);
-          final img = tracks.isNotEmpty ? _pickAlbumImage(tracks.first.album, seed: tracks.first.id.hashCode) : _pickAlbumImage(p.name, seed: p.name.hashCode);
-          return GestureDetector(
-            onTap: (){ if(tracks.isNotEmpty) _playTracks(tracks, 0); },
-            onLongPress: () async {
-              final newName = await _promptText('Rename Playlist');
-              if(newName!=null && newName.trim().isNotEmpty){
-                await _playlistRepo.renamePlaylist(p, newName.trim());
-                setState(()=> _playlists = _playlistRepo.getAllPlaylists());
-              }
-            },
-            child: Container(
-              width: 120,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.35),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(children: [
-                Positioned.fill(child: Image.asset(img, fit: BoxFit.cover, color: Colors.black38, colorBlendMode: BlendMode.darken)),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Spacer(),
-                      Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, shadows: [Shadow(blurRadius: 4, color: Colors.black54)])),
-                      Text('${p.trackIds.length} Lagu', style: const TextStyle(fontSize: 11, color: Colors.white70)),
-                    ],
-                  ),
-                ),
-              ]),
-            ),
-          );
-        },
-      ),
-    );
-  }
+  // Playlist strip removed per request; playlist features remain accessible via long-press menu.
 
   Widget _seeAllButton(List<Track> list, {required String title}){
     return TextButton(onPressed: (){}, child: const Text('See all', style: TextStyle(color: Colors.white70)));
@@ -411,8 +376,9 @@ class _HomeContentState extends State<_HomeContent> {
 
   String _pickAlbumImage(String album, {int? seed}){
     if(_albumPlaceholders.isEmpty) return _artistPlaceholder;
-    final h = (seed ?? album.hashCode).abs();
-    return _albumPlaceholders[h % _albumPlaceholders.length];
+  final base = (seed ?? album.hashCode);
+  final h = (base ^ _sessionSalt).abs(); // xor with session salt for new mapping each app launch
+  return _albumPlaceholders[h % _albumPlaceholders.length];
   }
 }
 

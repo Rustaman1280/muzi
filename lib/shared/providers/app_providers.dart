@@ -1,4 +1,5 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/services/audio_player_service.dart'; // legacy simple service (optional)
 import '../../core/services/audio_player_handler.dart';
@@ -7,6 +8,7 @@ import '../../core/services/permission_service.dart';
 import '../../core/models/song.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/download/download_screen.dart';
+import '../../features/player/player_screen.dart';
 import '../widgets/main_scaffold.dart';
 
 // Router Provider
@@ -28,6 +30,39 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/download',
             name: 'download',
             builder: (context, state) => const DownloadScreen(),
+          ),
+          GoRoute(
+            path: '/player',
+            name: 'player',
+            pageBuilder: (context, state) {
+              // Expecting extra map with current song info
+              final extra = state.extra as Map<String, dynamic>?;
+              final title = extra?['title'] as String? ?? 'Unknown';
+              final artist = extra?['artist'] as String? ?? 'Unknown';
+              final art = extra?['artwork'] as ImageProvider<Object>? ?? const AssetImage('assets/images/foto (1).jpg');
+              final duration = extra?['duration'] as Duration? ?? Duration.zero;
+              final position = extra?['position'] as Duration? ?? Duration.zero;
+              final playing = extra?['playing'] as bool? ?? false;
+              return CustomTransitionPage(
+                key: state.pageKey,
+                transitionDuration: const Duration(milliseconds: 500),
+                child: PlayerScreen(
+                  title: title,
+                  artist: artist,
+                  artwork: art,
+                  duration: duration,
+                  position: position,
+                  isPlaying: playing,
+                ),
+                transitionsBuilder: (context, animation, secondary, child) {
+                  final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+                  return FadeTransition(
+                    opacity: curved,
+                    child: ScaleTransition(scale: Tween(begin: .96, end: 1.0).animate(curved), child: child),
+                  );
+                },
+              );
+            },
           ),
         ],
       ),
