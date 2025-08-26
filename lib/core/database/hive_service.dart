@@ -29,7 +29,7 @@ class HiveService {
   }
 
   static Box get songBox => Hive.box(_songBox);
-  static Box get playlistBox => Hive.box(_playlistBox);
+  static Box<Playlist> get playlistBox => Hive.box<Playlist>(_playlistBox);
   static Box get settingsBox => Hive.box(_settingsBox);
   static Box<Track> get trackBox => Hive.box<Track>(_trackBox);
   static Box<Album> get albumBox => Hive.box<Album>(_albumBox);
