@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'app/app.dart';
@@ -8,31 +7,38 @@ import 'core/database/hive_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Hive
-  await Hive.initFlutter();
+
+  // Initialize Hive only via service (service already calls Hive.initFlutter)
   await HiveService.init();
-  
-  // Request permissions
-  await _requestPermissions();
-  
+  debugPrint('Hive initialized');
+
   runApp(
     ProviderScope(
       child: const MuziekApp(),
     ),
   );
+  debugPrint('App started, scheduling permission requests');
+
+  // Defer permission requests until after first frame so Activity is ready
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _requestPermissions();
+  });
 }
 
 Future<void> _requestPermissions() async {
-  // Request storage permission
-  await Permission.storage.request();
-  
-  // Request audio permission if needed
+  try {
+  debugPrint('Requesting permissions...');
+    await Permission.storage.request();
+    // Some devices use media library permissions; request if present
+  // Request audio permission (may be ignored on devices that don't define it)
   await Permission.audio.request();
-  
-  // Request notification permission for Android 13+
-  if (await Permission.notification.isDenied) {
-    await Permission.notification.request();
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
+  debugPrint('Permission flow complete');
+  } catch (_) {
+    // Ignore startup permission errors; UI flow can retry later
+  debugPrint('Permission request failed (ignored)');
   }
 }
 

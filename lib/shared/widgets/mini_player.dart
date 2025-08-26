@@ -15,7 +15,7 @@ class MiniPlayer extends ConsumerWidget {
     }
 
     return Container(
-      height: 64,
+      height: 60,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
@@ -70,7 +70,7 @@ class MiniPlayer extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  _PositionBar(duration: state.duration),
+                  _ProgressBar(duration: state.duration),
                 ],
               ),
             ),
@@ -104,30 +104,27 @@ class MiniPlayer extends ConsumerWidget {
   }
 }
 
-class _PositionBar extends ConsumerWidget {
+class _ProgressBar extends ConsumerWidget {
   final Duration? duration;
-  const _PositionBar({required this.duration});
+  const _ProgressBar({required this.duration});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final controller = ref.read(audioControllerProvider.notifier);
     final position = ref.watch(audioControllerProvider).position;
     final total = duration ?? Duration.zero;
     final value = total.inMilliseconds == 0
         ? 0.0
         : (position.inMilliseconds / total.inMilliseconds)
             .clamp(0.0, 1.0);
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(trackHeight: 2),
-      child: Slider(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: LinearProgressIndicator(
         value: value,
-        onChanged: (v) {
-          if (total.inMilliseconds > 0) {
-            final seekPos = Duration(
-                milliseconds: (total.inMilliseconds * v).round());
-            controller.seek(seekPos);
-          }
-        },
+        minHeight: 4,
+        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        valueColor: AlwaysStoppedAnimation(
+          Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }

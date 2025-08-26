@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/providers/app_providers.dart';
 import '../../core/models/song.dart';
+import '../../core/repository/library_repository.dart' as librepo;
+import '../../core/models/library_models.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -9,168 +11,120 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
   final audio = ref.read(audioControllerProvider.notifier);
+  final repo = ref.read(librepo.libraryRepositoryProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Muziek'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // TODO: Implement search
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Quick Actions
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildQuickActionCard(
-                    context,
-                    'Your Library',
-                    'Browse your music',
-                    Icons.library_music,
-                    () {
-                      // TODO: Navigate to library
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildQuickActionCard(
-                    context,
-                    'Recently Played',
-                    'Your recent tracks',
-                    Icons.history,
-                    () {
-                      // TODO: Navigate to recent
-                    },
-                  ),
-                ),
-              ],
+  // Gunakan FutureBuilder sederhana untuk memuat track dari Hive.
+  return FutureBuilder<List<Track>>(
+    future: repo.getAllTracks(),
+    builder: (context, snap) {
+      final tracks = snap.data ?? [];
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Muziek'),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () async {
+                // Jalankan scan ulang dan rebuild UI
+                await repo.refreshLibrary();
+                // ignore: use_build_context_synchronously
+                (context as Element).markNeedsBuild();
+              },
             ),
-          ),
-
-          // Demo Music Section
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Demo Songs',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _getDemoSongs().length,
-                      itemBuilder: (context, index) {
-                        final song = _getDemoSongs()[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                            child: Icon(
-                              Icons.music_note,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                          title: Text(song.title),
-                          subtitle: Text(song.artist),
-                          trailing: const Icon(Icons.more_vert),
-                          onTap: () {
-                            audio.loadAndPlay(_getDemoSongs(), startIndex: index);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {},
+            ),
+          ],
+        ),
+        body: tracks.isEmpty
+            ? _EmptyLibrary(onScan: () async {
+                try {
+                  await repo.refreshLibrary();
+                  // ignore: use_build_context_synchronously
+                  (context as Element).markNeedsBuild();
+                } catch (e) {
+                  // ignore: use_build_context_synchronously
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Scan gagal: $e')),
+                  );
+                }
+              })
+            : _TrackList(
+                tracks: tracks,
+                onPlay: (startIndex) {
+                  final songs = tracks.map(_trackToSong).toList();
+                  audio.loadAndPlay(songs, startIndex: startIndex);
+                },
               ),
-            ),
-          ),
-        ],
-      ),
-    );
+      );
+    },
+  );
   }
 
-  Widget _buildQuickActionCard(
-    BuildContext context,
-    String title,
-    String subtitle,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                icon,
-                size: 32,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
+  // (Card cepat dihapus karena tidak digunakan lagi)
+
+  Song _trackToSong(Track t) => Song(
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        album: t.album,
+        filePath: t.path,
+        duration: Duration(milliseconds: t.durationMs),
+        albumArt: t.artworkPath,
+      );
+}
+
+class _EmptyLibrary extends StatelessWidget {
+  final Future<void> Function() onScan;
+  const _EmptyLibrary({required this.onScan});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.library_music, size: 64),
+            const SizedBox(height: 16),
+            const Text('Belum ada lagu. Mulai scan untuk memuat musik lokal.'),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: onScan,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Scan Musik'),
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  List<Song> _getDemoSongs() {
-    return [
-      Song(
-        id: '1',
-        title: 'Demo Song 1',
-        artist: 'Demo Artist',
-        album: 'Demo Album',
-        filePath: '/demo/song1.mp3',
-        duration: const Duration(minutes: 3, seconds: 30),
-      ),
-      Song(
-        id: '2',
-        title: 'Another Demo Track',
-        artist: 'Another Artist',
-        album: 'Another Album',
-        filePath: '/demo/song2.mp3',
-        duration: const Duration(minutes: 4, seconds: 15),
-      ),
-      Song(
-        id: '3',
-        title: 'Third Demo Song',
-        artist: 'Third Artist',
-        album: 'Third Album',
-        filePath: '/demo/song3.mp3',
-        duration: const Duration(minutes: 2, seconds: 45),
-      ),
-    ];
+class _TrackList extends StatelessWidget {
+  final List<Track> tracks;
+  final void Function(int index) onPlay;
+  const _TrackList({required this.tracks, required this.onPlay});
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      itemCount: tracks.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final t = tracks[index];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Icon(Icons.music_note, color: Theme.of(context).colorScheme.onPrimaryContainer),
+          ),
+            title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(t.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => onPlay(index),
+          trailing: const Icon(Icons.play_arrow),
+        );
+      },
+    );
   }
 }

@@ -109,16 +109,26 @@ class AudioPlayerHandler extends BaseAudioHandler
 	Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
 		final items = songs.map((e) => e.toMediaItem()).toList();
 		queue.add(items);
-		await _player.setAudioSource(ConcatenatingAudioSource(
-				children: items
-						.map((m) => m.extras?['filePath'] != null
-								? AudioSource.uri(Uri.parse(m.extras!['filePath']))
-								: AudioSource.uri(Uri.parse(m.id)))
-						.toList()));
-		if (startIndex > 0 && startIndex < items.length) {
-			await _player.seek(Duration.zero, index: startIndex);
+		try {
+			await _player.setAudioSource(ConcatenatingAudioSource(
+					children: items
+							.map((m) => m.extras?['filePath'] != null
+									? AudioSource.uri(Uri.parse(m.extras!['filePath']))
+									: AudioSource.uri(Uri.parse(m.id)))
+							.toList()));
+			if (startIndex > 0 && startIndex < items.length) {
+				await _player.seek(Duration.zero, index: startIndex);
+			}
+			await play();
+		} catch (e, _) {
+			// Revert queue on failure to avoid stuck UI
+			queue.add([]);
+			final base = playbackState.valueOrNull ?? PlaybackState();
+			playbackState.add(base.copyWith(
+				playing: false,
+				processingState: AudioProcessingState.idle,
+				androidCompactActionIndices: const []));
 		}
-		await play();
 	}
 
 	Future<void> addSong(Song song) async {
@@ -178,8 +188,15 @@ class AudioPlayerHandler extends BaseAudioHandler
 
 	// Load and play single local file or URI
 	Future<void> playPath(String pathOrUri) async {
-		await _player.setAudioSource(AudioSource.uri(Uri.parse(pathOrUri)));
-		await play();
+		try {
+			await _player.setAudioSource(AudioSource.uri(Uri.parse(pathOrUri)));
+			await play();
+		} catch (e, _) {
+			final base = playbackState.valueOrNull ?? PlaybackState();
+			playbackState.add(base.copyWith(
+				playing: false,
+				processingState: AudioProcessingState.idle));
+		}
 	}
 
 	@override
