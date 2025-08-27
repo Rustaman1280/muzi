@@ -8,7 +8,10 @@ import '../../core/services/permission_service.dart';
 import '../../core/models/song.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/download/download_screen.dart';
+import '../../features/download/tiktok/tiktok_downloader.dart';
 import '../../features/player/player_screen.dart';
+import '../../core/database/hive_service.dart';
+import '../../core/models/library_models.dart';
 import '../widgets/main_scaffold.dart';
 
 // Router Provider
@@ -172,6 +175,10 @@ class DownloadItem {
   final String url;
   final double progress;
   final DownloadStatus status;
+  final String? source; // e.g. TikTok
+  final String? filePath; // local path when downloaded
+  final int? sizeBytes;
+  final String? error;
 
   const DownloadItem({
     required this.id,
@@ -179,6 +186,10 @@ class DownloadItem {
     required this.url,
     this.progress = 0.0,
     this.status = DownloadStatus.pending,
+    this.source,
+    this.filePath,
+    this.sizeBytes,
+    this.error,
   });
 
   DownloadItem copyWith({
@@ -187,6 +198,10 @@ class DownloadItem {
     String? url,
     double? progress,
     DownloadStatus? status,
+    String? source,
+    String? filePath,
+    int? sizeBytes,
+    String? error,
   }) {
     return DownloadItem(
       id: id ?? this.id,
@@ -194,6 +209,10 @@ class DownloadItem {
       url: url ?? this.url,
       progress: progress ?? this.progress,
       status: status ?? this.status,
+      source: source ?? this.source,
+      filePath: filePath ?? this.filePath,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      error: error ?? this.error,
     );
   }
 }
@@ -239,5 +258,69 @@ class DownloadQueueController extends StateNotifier<DownloadQueueState> {
       queue: state.queue.where((item) => item.id != id).toList(),
       failed: [...state.failed, failedItem],
     );
+  }
+
+  // TikTok download flow with progress updates
+  Future<void> startTikTokDownload(String url, {String? customTitle}) async {
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final initial = DownloadItem(
+      id: id,
+      title: customTitle ?? 'TikTok Audio',
+      url: url,
+      progress: 0,
+      status: DownloadStatus.downloading,
+      source: 'TikTok',
+    );
+    addToQueue(initial);
+    final downloader = TikTokDownloader();
+    try {
+      final result = await downloader.fetchAudio(url, onProgress: (recv, total) {
+        double prog;
+        if (total == null || total == 0) {
+          prog = (recv % 1000000) / 1000000; // pseudo cycle to show movement
+        } else {
+          prog = (recv / total) * 100;
+        }
+        updateProgress(id, prog.clamp(0, 100));
+      });
+      // mark complete and move to completed
+      updateProgress(id, 100);
+      final idx = state.queue.indexWhere((e) => e.id == id);
+      if (idx != -1) {
+        final item = state.queue[idx];
+        final finalTitle = customTitle ?? result.title;
+        final updated = item.copyWith(status: DownloadStatus.completed, filePath: result.file.path, sizeBytes: result.size, title: finalTitle);
+        state = state.copyWith(
+          queue: state.queue.where((e) => e.id != id).toList(),
+          completed: [...state.completed, updated],
+        );
+        // Persist to library (simple Track entry) so it shows on Home
+        try {
+          final track = Track(
+            id: 'dl_$id',
+            title: finalTitle,
+            artist: 'TikTok',
+            album: 'Downloads',
+            durationMs: 0, // unknown without decoding; can update later
+            path: result.file.path,
+            addedAt: DateTime.now().millisecondsSinceEpoch,
+            artworkPath: null,
+            genre: null,
+          );
+            HiveService.trackBox.add(track);
+        } catch (_) {}
+      }
+    } catch (e) {
+      // move to failed
+      final idx = state.queue.indexWhere((e) => e.id == id);
+      if (idx != -1) {
+        final item = state.queue[idx];
+        final failed = item.copyWith(status: DownloadStatus.failed, error: e.toString());
+        state = state.copyWith(
+          queue: state.queue.where((e) => e.id != id).toList(),
+          failed: [...state.failed, failed],
+        );
+      }
+    }
   }
 }

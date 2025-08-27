@@ -82,7 +82,7 @@ class AudioController extends StateNotifier<AudioControllerState> {
   Future<void> previous() => handler.skipToPrevious();
   Future<void> toggleShuffle() => handler.toggleShuffle();
   Future<void> setRepeat(AudioServiceRepeatMode m) => handler.setRepeat(m);
-  Future<void> playPath(String p) => handler.playPath(p);
+  Future<void> playPath(String p, {String? title}) => handler.playPath(p, title: title);
 
   Stream<Duration> get positionStream => handler.positionStream;
   Stream<Song?> get currentTrackStream => handler.currentSongStream;

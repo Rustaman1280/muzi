@@ -60,6 +60,7 @@ dependencies:
   cached_network_image: ^3.4.1
   collection: ^1.18.0
   palette_generator: ^0.3.3
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

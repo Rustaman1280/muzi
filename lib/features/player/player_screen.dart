@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import '../../shared/providers/app_providers.dart';
 
-class PlayerScreen extends StatefulWidget {
+class PlayerScreen extends ConsumerStatefulWidget {
   final String title;
   final String artist;
   final ImageProvider artwork;
@@ -33,13 +35,14 @@ class PlayerScreen extends StatefulWidget {
   });
 
   @override
-  State<PlayerScreen> createState() => _PlayerScreenState();
+  ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderStateMixin {
+class _PlayerScreenState extends ConsumerState<PlayerScreen> with SingleTickerProviderStateMixin {
   Color _top = const Color(0xFF0E121B);
   Color _accent = const Color(0xFF1E2533);
   List<Color> _gradientColors = const [Color(0xFF000000), Color(0xFF101317)];
+  double? _temporarySeek; // while user drags slider
 
   @override
   void initState() {
@@ -116,13 +119,20 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     return hsl.withLightness(l.toDouble()).toColor();
   }
 
-  double get _progress {
-    if(widget.duration.inMilliseconds==0) return 0;
-    return widget.position.inMilliseconds / widget.duration.inMilliseconds;
+  double _progress(Duration position, Duration duration){
+    if(duration.inMilliseconds==0) return 0;
+    return position.inMilliseconds / duration.inMilliseconds;
   }
 
   @override
   Widget build(BuildContext context) {
+    final audioState = ref.watch(audioControllerProvider);
+    final controller = ref.read(audioControllerProvider.notifier);
+    final isPlaying = audioState.playing;
+    final duration = audioState.duration ?? widget.duration;
+    final position = _temporarySeek != null && duration.inMilliseconds>0
+        ? Duration(milliseconds: (_temporarySeek! * duration.inMilliseconds).round())
+        : audioState.position;
     final theme = Theme.of(context);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 600),
@@ -143,13 +153,19 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                   const SizedBox(height: 32),
                   _buildArtwork(),
                   const SizedBox(height: 36),
-                  _buildTitle(theme),
+                  _buildTitle(theme, audioState.current?.title ?? widget.title),
                   const SizedBox(height: 8),
-                  _buildArtist(theme),
+                  _buildArtist(theme, audioState.current?.artist ?? widget.artist),
                   const Spacer(),
-                  _buildSlider(theme),
+                  _buildSlider(theme, position, duration, onSeek: (d)=> controller.seek(d)),
                   const SizedBox(height: 20),
-                  _buildControls(theme),
+                  _buildControls(theme, isPlaying: isPlaying, onPlayPause: () async {
+                    if(isPlaying){
+                      await controller.pause();
+                    } else {
+                      await controller.play();
+                    }
+                  }, onNext: controller.next, onPrev: controller.previous),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -193,9 +209,9 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildTitle(ThemeData theme){
+  Widget _buildTitle(ThemeData theme, String title){
     return Text(
-      widget.title,
+      title,
       textAlign: TextAlign.center,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
@@ -207,9 +223,9 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildArtist(ThemeData theme){
+  Widget _buildArtist(ThemeData theme, String artist){
     return Text(
-      widget.artist,
+      artist,
       textAlign: TextAlign.center,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -220,13 +236,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildSlider(ThemeData theme){
+  Widget _buildSlider(ThemeData theme, Duration position, Duration duration, {required void Function(Duration) onSeek}){
     String fmt(Duration d){
       final m = d.inMinutes.remainder(60).toString().padLeft(2,'0');
       final s = d.inSeconds.remainder(60).toString().padLeft(2,'0');
       return '$m:$s';
     }
-    final remaining = widget.duration - widget.position;
+    final remaining = duration - position;
+    final prog = _progress(position, duration).clamp(0.0, 1.0);
     return Column(
       children: [
         SliderTheme(
@@ -239,15 +256,22 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
             thumbColor: Colors.white,
           ),
           child: Slider(
-            value: _progress.clamp(0,1),
-            onChanged: (_) {}, // read only for now
+            value: prog.isNaN? 0: prog,
+            onChanged: duration.inMilliseconds==0 ? null : (v){
+              setState(()=> _temporarySeek = v); // show immediate feedback
+            },
+            onChangeEnd: duration.inMilliseconds==0 ? null : (v){
+              setState(()=> _temporarySeek = null);
+              final target = Duration(milliseconds: (v * duration.inMilliseconds).round());
+              onSeek(target);
+            },
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: Row(
             children: [
-              Text(fmt(widget.position), style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70)),
+              Text(fmt(position), style: theme.textTheme.labelSmall?.copyWith(color: Colors.white70)),
               const Spacer(),
               Text('-${fmt(remaining)}', style: theme.textTheme.labelSmall?.copyWith(color: Colors.white54)),
             ],
@@ -257,19 +281,19 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildControls(ThemeData theme){
+  Widget _buildControls(ThemeData theme, {required bool isPlaying, required VoidCallback onPlayPause, required Future<void> Function() onNext, required Future<void> Function() onPrev}){
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
           iconSize: 30,
           color: Colors.white70,
-          onPressed: widget.onPrev,
+          onPressed: (){ onPrev(); },
           icon: const Icon(Icons.skip_previous_rounded),
         ),
         const SizedBox(width: 24),
         GestureDetector(
-          onTap: widget.onPlayPause,
+          onTap: onPlayPause,
           child: Container(
             width: 84,
             height: 84,
@@ -287,14 +311,14 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 BoxShadow(color: Colors.black.withOpacity(.4), blurRadius: 30, offset: const Offset(0,20)),
               ],
             ),
-            child: Icon(widget.isPlaying? Icons.pause_rounded : Icons.play_arrow_rounded, size: 48, color: Colors.black87),
+            child: Icon(isPlaying? Icons.pause_rounded : Icons.play_arrow_rounded, size: 48, color: Colors.black87),
           ),
         ),
         const SizedBox(width: 24),
         IconButton(
           iconSize: 30,
           color: Colors.white70,
-          onPressed: widget.onNext,
+          onPressed: (){ onNext(); },
           icon: const Icon(Icons.skip_next_rounded),
         ),
       ],

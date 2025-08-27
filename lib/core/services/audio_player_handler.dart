@@ -186,10 +186,21 @@ class AudioPlayerHandler extends BaseAudioHandler
 				: AudioServiceShuffleMode.none));
 	}
 
-	// Load and play single local file or URI
-	Future<void> playPath(String pathOrUri) async {
+	// Load and play single local file (e.g. m4a) or remote URI.
+	// Automatically distinguishes local paths and builds proper file URI.
+	Future<void> playPath(String pathOrUri, {String? title}) async {
 		try {
-			await _player.setAudioSource(AudioSource.uri(Uri.parse(pathOrUri)));
+			final isRemote = pathOrUri.startsWith('http://') || pathOrUri.startsWith('https://');
+			final uri = isRemote ? Uri.parse(pathOrUri) : Uri.file(pathOrUri);
+			await _player.setAudioSource(AudioSource.uri(uri));
+			// Provide a minimal mediaItem so lockscreen / notif can show something when playing ad-hoc file
+			mediaItem.add(MediaItem(
+				id: uri.toString(),
+				title: title ?? (isRemote ? uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'Stream' : uri.path.split('/').last),
+				artist: 'Local',
+				duration: _player.duration,
+				extras: {'filePath': pathOrUri},
+			));
 			await play();
 		} catch (e, _) {
 			final base = playbackState.valueOrNull ?? PlaybackState();
