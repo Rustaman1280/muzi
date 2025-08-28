@@ -18,7 +18,9 @@ class MiniPlayer extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        // Navigate via go_router so it works with MaterialApp.router
+  final router = GoRouter.of(context);
+  final currentLoc = router.routerDelegate.currentConfiguration.fullPath;
+  if(currentLoc == '/player') return; // avoid duplicate
         context.push('/player', extra: {
           'title': state.current!.title,
           'artist': state.current!.artist,

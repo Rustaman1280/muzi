@@ -3,18 +3,26 @@ import 'dart:ui';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/app_providers.dart';
+import '../../app/router.dart';
 import 'mini_player.dart';
 
-class MainScaffold extends ConsumerWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
+  const MainScaffold({super.key, required this.child});
+  @override
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+}
 
-  const MainScaffold({
-    super.key,
-    required this.child,
-  });
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
+  final _pageCache = <String, Widget>{};
+
+  Widget _getOrCreate(String path, Widget child){
+    if(path == '/player') return child; // never cache player
+    return _pageCache.putIfAbsent(path, () => child);
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
   final audioState = ref.watch(audioControllerProvider);
     final currentLocation = GoRouterState.of(context).uri.path;
 
@@ -23,7 +31,7 @@ class MainScaffold extends ConsumerWidget {
       extendBody: true,
       body: Stack(
         children: [
-          Positioned.fill(child: child),
+          Positioned.fill(child: _getOrCreate(currentLocation, widget.child)),
           Positioned(
             left: 0,
             right: 0,
@@ -87,7 +95,9 @@ class MainScaffold extends ConsumerWidget {
         context.go('/');
         break;
       case 1:
-        context.go('/download');
+        // show interstitial before navigating (if available)
+        ref.read(interstitialAdProvider).showIfAvailable(onDismissed: (){ context.go('/download'); });
+        // fallback navigate if ad not ready (showIfAvailable calls onDismissed immediately when null)
         break;
     }
   }

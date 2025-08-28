@@ -1,33 +1,84 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../shared/providers/app_providers.dart';
 
-class DownloadScreen extends ConsumerWidget {
+class DownloadScreen extends ConsumerStatefulWidget {
   const DownloadScreen({super.key});
+  @override
+  ConsumerState<DownloadScreen> createState() => _DownloadScreenState();
+}
+
+class _DownloadScreenState extends ConsumerState<DownloadScreen> {
+  BannerAd? _banner;
+  bool _adFailed = false;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final downloadState = ref.watch(downloadQueueProvider);
+  void initState() {
+    super.initState();
+    _loadBanner();
+  }
 
+  void _loadBanner(){
+    final ad = BannerAd(
+      size: AdSize.banner,
+      adUnitId: 'ca-app-pub-9165746388253869/7287719572', // banner unit id
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad){ if(mounted) setState(()=> _banner = ad as BannerAd); },
+        onAdFailedToLoad: (ad, err){ ad.dispose(); if(mounted) setState(()=> _adFailed = true); },
+      ),
+    );
+    ad.load();
+  }
+
+  @override
+  void dispose() {
+    _banner?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final downloadState = ref.watch(downloadQueueProvider);
+    final body = downloadState.queue.isEmpty && downloadState.completed.isEmpty
+        ? _buildEmptyState(context)
+        : _buildDownloadList(context, ref, downloadState);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Downloads'),
         centerTitle: true,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(70),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: _AddButton(onTap: () => _showAddDownloadDialog(context, ref)),
-            ),
+          preferredSize: Size.fromHeight(_banner == null ? 70 : 70 + _banner!.size.height.toDouble() + 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if(_banner != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  child: SizedBox(
+                    height: _banner!.size.height.toDouble(),
+                    width: _banner!.size.width.toDouble(),
+                    child: AdWidget(ad: _banner!),
+                  ),
+                ) else if(!_adFailed)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12, bottom: 8),
+                    child: SizedBox(height: 32, child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))),
+                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _AddButton(onTap: () => _showAddDownloadDialog(context, ref)),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-      body: downloadState.queue.isEmpty && downloadState.completed.isEmpty
-          ? _buildEmptyState(context)
-          : _buildDownloadList(context, ref, downloadState),
+      body: body,
     );
   }
 

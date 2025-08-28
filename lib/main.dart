@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'app/app.dart';
 import 'core/database/hive_service.dart';
@@ -11,6 +12,9 @@ Future<void> main() async {
   // Initialize Hive only via service (service already calls Hive.initFlutter)
   await HiveService.init();
   debugPrint('Hive initialized');
+
+  // Initialize Google Mobile Ads SDK
+  await MobileAds.instance.initialize();
 
   runApp(
     ProviderScope(

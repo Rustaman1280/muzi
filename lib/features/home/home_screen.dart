@@ -7,6 +7,8 @@ import '../../core/models/song.dart';
 import '../../core/repository/library_repository.dart' as librepo;
 import '../../core/models/library_models.dart';
 import '../../core/repository/playlist_repository.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../../ads/native_inline_ad.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -50,6 +52,11 @@ class _HomeContentState extends State<_HomeContent> {
   bool _ascending = true;
   late final PlaylistRepository _playlistRepo;
   late final int _sessionSalt; // randomizes placeholder selection per app session
+  // Single random banner ad
+  static const _bannerAdUnitId = 'ca-app-pub-9165746388253869/7287719572';
+  BannerAd? _singleBanner;
+  int? _adInsertIndex; // index in combined list
+  bool _adLoading = false;
 
   @override
   void initState() {
@@ -57,6 +64,15 @@ class _HomeContentState extends State<_HomeContent> {
     _playlistRepo = PlaylistRepository();
   _sessionSalt = Random().nextInt(1<<30);
   _load();
+  }
+
+  // (Removed multi-slot banner logic; single random banner used instead)
+
+  @override
+  void dispose(){
+  _singleBanner?.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -114,7 +130,7 @@ class _HomeContentState extends State<_HomeContent> {
     widget.audio.loadAndPlay(songs, startIndex: index).then((_) {
       if((firstStart || mounted) && mounted){
         final current = songs[index];
-        context.push('/player', extra: {
+  context.push('/player', extra: {
           'title': current.title,
           'artist': current.artist,
           'artwork': AssetImage(_pickAlbumImage(current.album, seed: current.id.hashCode)),
@@ -229,9 +245,13 @@ class _HomeContentState extends State<_HomeContent> {
           SliverToBoxAdapter(child: _buildTrending()),
           SliverToBoxAdapter(child: _SectionHeader('All Songs', action: IconButton(onPressed: _scrollToTop, icon: const Icon(Icons.arrow_upward, size: 18)) )),
           SliverList.builder(
-            itemCount: _filteredSorted.length,
+            itemCount: _withAdsItemCount(),
             itemBuilder: (c,i){
-              final t = _filteredSorted[i];
+              if(_isAdIndex(i)){
+                return _buildAdTile();
+              }
+              final dataIndex = _dataIndexFor(i);
+              final t = _filteredSorted[dataIndex];
               return ListTile(
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
@@ -239,7 +259,7 @@ class _HomeContentState extends State<_HomeContent> {
                 ),
                 title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
                 subtitle: Text(t.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70)),
-                onTap: ()=> _playTracks(_filteredSorted, i),
+                onTap: ()=> _playTracks(_filteredSorted, dataIndex),
                 onLongPress: ()=> _showTrackMenu(t),
               );
             },
@@ -283,16 +303,25 @@ class _HomeContentState extends State<_HomeContent> {
     for(final t in _all){ byAlbum.putIfAbsent(t.album, ()=> []).add(t); }
     final albums = byAlbum.entries.toList();
     albums.sort((a,b)=> b.value.length.compareTo(a.value.length));
-    final cards = albums.take(8).toList();
+    final cards = albums.take(7).toList(); // leave room for ad as first card
     return SizedBox(
       height: 160,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         scrollDirection: Axis.horizontal,
-        itemCount: cards.length,
+        itemCount: cards.length + 1, // +1 for ad
         separatorBuilder: (_, __)=> const SizedBox(width: 14),
         itemBuilder: (c,i){
-          final e = cards[i];
+          if(i==0){
+            return SizedBox(
+              width: 150,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: const NativeInlineAd(padding: EdgeInsets.zero),
+              ),
+            );
+          }
+          final e = cards[i-1];
           final img = _pickAlbumImage(e.key, seed: e.key.hashCode + i);
           return GestureDetector(
             onTap: (){ _playTracks(e.value, 0); },
@@ -379,6 +408,61 @@ class _HomeContentState extends State<_HomeContent> {
   final base = (seed ?? album.hashCode);
   final h = (base ^ _sessionSalt).abs(); // xor with session salt for new mapping each app launch
   return _albumPlaceholders[h % _albumPlaceholders.length];
+  }
+
+  bool _isAdIndex(int listIndex){
+    return _adInsertIndex != null && listIndex == _adInsertIndex;
+  }
+
+  int _withAdsItemCount(){
+    _planAdIfNeeded();
+    if(_filteredSorted.isEmpty) return 0;
+    if(_adInsertIndex != null) return _filteredSorted.length + 1; // reserve slot even if not loaded
+    return _filteredSorted.length;
+  }
+
+  int _dataIndexFor(int listIndex){
+    if(_isAdIndex(listIndex)) return 0; // unused path
+    if(_adInsertIndex != null && listIndex > _adInsertIndex!){
+      return listIndex - 1;
+    }
+    return listIndex;
+  }
+
+  void _planAdIfNeeded(){
+    if(_filteredSorted.isEmpty) return;
+    // Ensure index valid
+    if(_adInsertIndex == null || (_adInsertIndex! >= _filteredSorted.length)){
+      _adInsertIndex = Random().nextInt(_filteredSorted.length); // 0..len-1
+    }
+    if(_singleBanner == null && !_adLoading){
+      _adLoading = true;
+      final ad = BannerAd(
+        size: AdSize.banner,
+        adUnitId: _bannerAdUnitId,
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (ad){ if(mounted) setState((){ _singleBanner = ad as BannerAd; _adLoading = false; }); },
+          onAdFailedToLoad: (ad, error){ ad.dispose(); if(mounted) setState((){ _adLoading = false; }); },
+        ),
+      );
+      ad.load();
+    }
+  }
+
+  Widget _buildAdTile(){
+    if(_singleBanner == null){
+      // placeholder height similar to banner
+      return const SizedBox(height: 60);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: SizedBox(
+        height: _singleBanner!.size.height.toDouble(),
+        width: double.infinity,
+        child: AdWidget(ad: _singleBanner!),
+      ),
+    );
   }
 }
 

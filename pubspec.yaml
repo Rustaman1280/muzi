@@ -61,6 +61,7 @@ dependencies:
   collection: ^1.18.0
   palette_generator: ^0.3.3
   http: ^1.2.2
+  google_mobile_ads: ^4.0.0
 
 dev_dependencies:
   flutter_test:
