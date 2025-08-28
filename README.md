@@ -150,7 +150,3 @@ The app requires the following permissions:
 3. Implement proper error handling
 4. Add tests for new features
 5. Follow Flutter/Dart style guidelines
-
-## License
-
-[Add your license information here]
