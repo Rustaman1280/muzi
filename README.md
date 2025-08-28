@@ -5,7 +5,7 @@ A Flutter music player app with modern audio features and local music library su
 ## Package Information
 - **App Name**: Muziek
 - **Package Name**: com.crustdev.muziek
-- **Platform**: Android (minSdkVersion 21+), iOS
+- **Platform**: Android (minSdkVersion 21+)
 
 ## Features
 
@@ -86,10 +86,6 @@ lib/
 - **Notification channel** for media controls
 - **Storage permissions** for local music access
 
-### iOS
-- **Background modes**: audio, background-processing
-- **Usage descriptions** for media access
-- **Audio session** configuration for background playback
 
 ## Setup and Installation
 
@@ -138,11 +134,6 @@ The app requires the following permissions:
 - Custom application ID: com.crustdev.muziek
 - minSdkVersion 21 for modern audio features
 
-### iOS
-- Background audio capabilities enabled
-- Media usage descriptions included
-- Audio session configuration for background playback
-
 ## Contributing
 
 1. Follow the established folder structure
@@ -150,7 +141,3 @@ The app requires the following permissions:
 3. Implement proper error handling
 4. Add tests for new features
 5. Follow Flutter/Dart style guidelines
-
-## License
-
-[Add your license information here]
